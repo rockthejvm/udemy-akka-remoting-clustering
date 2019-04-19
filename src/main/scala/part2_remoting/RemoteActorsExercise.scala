@@ -1,6 +1,6 @@
 package part2_remoting
 
-import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, PoisonPill, Props}
+import akka.actor.{Actor, ActorIdentity, ActorLogging, ActorRef, ActorSystem, Identify, PoisonPill, Props}
 import com.typesafe.config.ConfigFactory
 
 object WordCountDomain {
@@ -25,12 +25,17 @@ class WordCountMaster extends Actor with ActorLogging {
 
   override def receive: Receive = {
     case Initialize(nWorkers) =>
-      /*
-       TODO: identify the workers in the remote JVM
-       - create actor selections for every worker from 1 to nWorkers
-       - send Identify messages to the actor selections
-       - get into an initialization state, while you're receiving ActorIdentities
-      */
+      log.info("Master initializing...")
+      val workerSelections = (1 to nWorkers).map(id => context.actorSelection(s"akka://WorkersSystem@localhost:2552/user/wordCountWorker$id"))
+      workerSelections.foreach(_ ! Identify("rtjvm"))
+      context.become(initializing(List(), nWorkers))
+  }
+
+  def initializing(workers: List[ActorRef], remainingWorkers: Int): Receive = {
+    case ActorIdentity("rtjvm", Some(workerRef)) =>
+      log.info(s"Worker identified: $workerRef")
+      if (remainingWorkers == 1) context.become(online(workerRef :: workers, 0, 0))
+      else context.become(initializing(workerRef :: workers, remainingWorkers - 1))
   }
 
   def online(workers: List[ActorRef], remainingTasks: Int, totalCount: Int): Receive = {
