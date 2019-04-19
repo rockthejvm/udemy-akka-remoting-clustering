@@ -25,10 +25,15 @@ class WordCountMaster extends Actor with ActorLogging {
 
   override def receive: Receive = {
     case Initialize(nWorkers) =>
-      log.info("Master initializing...")
-      val workerSelections = (1 to nWorkers).map(id => context.actorSelection(s"akka://WorkersSystem@localhost:2552/user/wordCountWorker$id"))
-      workerSelections.foreach(_ ! Identify("rtjvm"))
-      context.become(initializing(List(), nWorkers))
+      val workers = (1 to nWorkers).map(id => context.actorOf(Props[WordCountWorker], s"wordCountWorker$id"))
+      context.become(online(workers.toList, 0, 0))
+  }
+
+  def identifyWorkers(nWorkers: Int) = {
+    log.info("Master initializing...")
+    val workerSelections = (1 to nWorkers).map(id => context.actorSelection(s"akka://WorkersSystem@localhost:2552/user/wordCountWorker$id"))
+    workerSelections.foreach(_ ! Identify("rtjvm"))
+    context.become(initializing(List(), nWorkers))
   }
 
   def initializing(workers: List[ActorRef], remainingWorkers: Int): Receive = {
@@ -81,8 +86,6 @@ object MasterApp extends App {
 }
 
 object WorkersApp extends App {
-  import WordCountDomain._
-
   val config = ConfigFactory.parseString(
     """
       |akka.remote.artery.canonical.port = 2552
@@ -90,6 +93,4 @@ object WorkersApp extends App {
     .withFallback(ConfigFactory.load("part2_remoting/remoteActorsExercise.conf"))
 
   val system = ActorSystem("WorkersSystem", config)
-
-  (1 to 5).map(i => system.actorOf(Props[WordCountWorker], s"wordCountWorker$i"))
 }
