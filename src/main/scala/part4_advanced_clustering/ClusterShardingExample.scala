@@ -2,16 +2,20 @@ package part4_advanced_clustering
 
 import java.util.{Date, UUID}
 
-import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Props}
+import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Props, ReceiveTimeout}
+import akka.cluster.sharding.ShardRegion.Passivate
 import akka.cluster.sharding.{ClusterSharding, ClusterShardingSettings, ShardRegion}
 import com.typesafe.config.ConfigFactory
 
 import scala.util.Random
+import scala.concurrent.duration._
 
 case class OysterCard(id: String, amount: Double)
 case class EntryAttempt(oysterCard: OysterCard, date: Date)
 case object EntryAccepted
 case class EntryRejected(reason: String)
+// passivate message
+case object TerminateValidator
 
 /////////////////////////////////
 // Actors
@@ -36,6 +40,7 @@ class OysterCardValidator extends Actor with ActorLogging {
   override def preStart(): Unit = {
     super.preStart()
     log.info("Validator starting")
+    context.setReceiveTimeout(10 seconds)
   }
 
   override def receive: Receive = {
@@ -43,6 +48,10 @@ class OysterCardValidator extends Actor with ActorLogging {
       log.info(s"Validating $card")
       if (amount > 2.5) sender() ! EntryAccepted
       else sender() ! EntryRejected(s"[$id] not enough funds, please top up")
+    case ReceiveTimeout =>
+      context.parent ! Passivate(TerminateValidator)
+    case TerminateValidator => // I am sure that I won't be contacted again, so safe to stop
+      context.stop(self)
   }
 }
 
@@ -65,7 +74,18 @@ object TurnstileSettings {
     case EntryAttempt(OysterCard(cardId, _), _) =>
       val shardId = cardId.hashCode.abs % numberOfShards
       shardId.toString
+    case ShardRegion.StartEntity(entityId) =>
+      (entityId.toLong % numberOfShards).toString
   }
+
+  /*
+    There must be NO two messages M1 and M2 for which
+    extractEntityId(M1) == extractEntityId(M2) and extractShardId(M1) != extractShardId(M2)
+
+      OTHERWISE BAD. VERY BAD.
+
+    entityId -> shardId, then FORALL messages M, if extractEntityId(M) = entityId, then extractShardId(M) MUST BE shardId
+   */
 }
 
 /////////////////////////////////
@@ -85,7 +105,7 @@ class TubeStation(port: Int, numberOfTurnstiles: Int) extends App {
   val validatorShardRegionRef: ActorRef = ClusterSharding(system).start(
     typeName = "OysterCardValidator",
     entityProps = Props[OysterCardValidator],
-    settings = ClusterShardingSettings(system),
+    settings = ClusterShardingSettings(system).withRememberEntities(true),
     extractEntityId = TurnstileSettings.extractEntityId,
     extractShardId = TurnstileSettings.extractShardId
   )
