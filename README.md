@@ -1,6 +1,4 @@
-# The official repository for the Rock the JVM Akka Remoting and Clustering with Scala course
-
-Powered by [Rock the JVM!](rockthejvm.com)
+# The official repository for the Rock the JVM Akka Remoting and Clustering with Scala course (Udemy edition)
 
 This repository contains the code we wrote during  [Rock the JVM's Akka Remoting and Clustering with Scala](https://www.udemy.com/akka-remoting-clustering) course on Udemy. Unless explicitly mentioned, the code in this repository is exactly what was caught on camera.
 
